@@ -125,8 +125,17 @@ for seed in 1 2 3 4; do
         --save_dir "results/obs_attackers/HalfCheetah-v4/obsonly_matrix_s${seed}" --seed ${seed}
 done
 
-# --- HC: 3. illusory --- seeds 1-3 already done+valid: results/obs_attackers/HalfCheetah-v4/illusory_l2_matrix_s{1,2,3}. Only seed 4 needed.
-for seed in 4; do
+# --- HC: 3. illusory --- CORRECTED 2026-09-22 (was wrongly marked "seeds 1-3 valid, only 4
+# needed" -- verified false by direct measurement): illusory_l2_matrix_s{1,2,3} were trained
+# 2026-09-21 00:59-01:35, BEFORE the L2 project_budget fix (~13:xx same day). Loading that
+# checkpoint's weights through the CURRENT (fixed) project_budget collapses its real attack to
+# near-zero (measured: return 5536 vs clean 5490, i.e. no damage) because the policy was
+# trained to exploit the OLD buggy projection, which let its real L2 perturbation reach ~3.36
+# mean / 4.64 max -- 17-23x over the nominal 0.2 budget it was supposed to respect (confirmed
+# by re-running the same checkpoint's raw outputs through both projection versions side by
+# side). The old "77.3% damage" report was real but was silently measured at an effective
+# budget ~17x larger than stated -- not a fair budget=0.2 result. All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
     queue_job "hc_illusory_s${seed}" python -u -m examples.train_obs_attacker --scenario HalfCheetah-v4 \
         --mode illusory --attack obs --budget 0.2 --budget_norm l2 \
         --victim_run "$VICTIM_HC" --num_env_steps 4000000 --log_interval 20 \
