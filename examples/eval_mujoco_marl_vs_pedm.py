@@ -29,10 +29,23 @@ import gymnasium as gym
 from examples.eval_robust_detector import Victim
 from harl.algorithms.actors import ALGO_REGISTRY
 from harl.detectors.pedm_detector import PEDMDetector
+from harl.detectors.cotd_detector import COTDDetector
 
-PEDM_CKPT = None  # 2026-09-21: was hardcoded to HalfCheetah-v4's path -- now derived per-scenario
-                  # in main() (results/obs_attackers/<scenario>/pedm_detector.pt), overridable
-                  # via --pedm_ckpt, so this script works for Hopper/Ant/etc. too, not just HC.
+
+def build_detector(name, obs_dim, act_dim, ckpt_path):
+    """`--detector pedm` (default, deterministic forward-prediction dynamics model) or
+    `--detector cotd` (2026-09-22, CVAE-ensemble reconstruction detector with split-conformal
+    calibration, reproducing arXiv:2503.05238 -- see harl/detectors/cotd_detector.py's module
+    docstring). Both expose the same fit/predict_scores/calibrate_threshold interface, so
+    everything downstream (OR/CUSUM calibration and scoring) is unchanged either way."""
+    if name == "pedm":
+        d = PEDMDetector(obs_dim=obs_dim, action_dim=act_dim, n_part=100, device="cpu")
+    elif name == "cotd":
+        d = COTDDetector(obs_dim=obs_dim, action_dim=act_dim, device="cpu")
+    else:
+        raise ValueError(f"unknown --detector: {name}")
+    d.load(ckpt_path)
+    return d
 
 
 def cusum_stat(scores, mu, sigma, k=0.5):
@@ -68,8 +81,11 @@ def main():
     ap.add_argument("--episodes", type=int, default=15)
     ap.add_argument("--quantile", type=float, default=0.97)
     ap.add_argument("--pedm_ckpt", type=str, default=None,
-                     help="Override the PEDM checkpoint path; defaults to "
-                          "results/obs_attackers/<scenario>/pedm_detector.pt")
+                     help="Override the detector checkpoint path; defaults to "
+                          "results/obs_attackers/<scenario>/<pedm|cotd>_detector.pt")
+    ap.add_argument("--detector", type=str, default="pedm", choices=["pedm", "cotd"],
+                     help="pedm (default, deterministic forward-prediction) or cotd "
+                          "(CVAE-ensemble reconstruction detector, arXiv:2503.05238)")
     args = ap.parse_args()
 
     seed_dir = latest_seed_dir(args.run_dir)
@@ -79,7 +95,7 @@ def main():
 
     device = torch.device("cpu")
     scenario = env_args.get("scenario", "HalfCheetah-v4")
-    pedm_ckpt = args.pedm_ckpt or f"results/obs_attackers/{scenario}/pedm_detector.pt"
+    detector_ckpt = args.pedm_ckpt or f"results/obs_attackers/{scenario}/{args.detector}_detector.pt"
     probe = gym.make(scenario)
     obs_dim = int(probe.observation_space.shape[0])
     act_dim = int(probe.action_space.shape[0])
@@ -102,8 +118,7 @@ def main():
     else:
         obs_scale, act_scale = estimate_scales(scenario, victim, lo, hi)
 
-    pedm = PEDMDetector(obs_dim=obs_dim, action_dim=act_dim, n_part=100, device="cpu")
-    pedm.load(pedm_ckpt)
+    detector = build_detector(args.detector, obs_dim, act_dim, detector_ckpt)
 
     obs_pad = act_pad = obs_dim + act_dim
     obs_box = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(obs_pad,), dtype=np.float32)
@@ -177,9 +192,9 @@ def main():
     clean_scores, clean_rets = [], []
     for i in range(args.episodes):
         o_seq, a_seq, ret = run(4000 + i, attack=False)
-        clean_scores.append(pedm.predict_scores(o_seq, a_seq))
+        clean_scores.append(detector.predict_scores(o_seq, a_seq))
         clean_rets.append(ret)
-    threshold = pedm.calibrate_threshold(clean_scores, quantile=args.quantile)
+    threshold = detector.calibrate_threshold(clean_scores, quantile=args.quantile)
     clean_or = np.array([float(np.max(s)) for s in clean_scores])
     or_tau = float(np.quantile(clean_or, args.quantile))
 
@@ -195,7 +210,7 @@ def main():
     rets, per_step, or_scores, cusum_peaks, cusum_delays = [], [], [], [], []
     for i in range(args.episodes):
         o_seq, a_seq, ret = run(9000 + i, attack=True)
-        scores = pedm.predict_scores(o_seq, a_seq)
+        scores = detector.predict_scores(o_seq, a_seq)
         per_step.append(float(np.mean(scores)))
         or_scores.append(float(np.max(scores)))
         rets.append(ret)
@@ -203,7 +218,7 @@ def main():
         cusum_peaks.append(float(s_t.max()))
         crossed = np.nonzero(s_t > cusum_h)[0]
         cusum_delays.append(int(crossed[0]) if len(crossed) else None)
-        print(f"ep{i}: ret={ret:.2f} pedm_per_step={per_step[-1]:.4f} pedm_OR={or_scores[-1]:.4f} "
+        print(f"ep{i}: ret={ret:.2f} {args.detector}_per_step={per_step[-1]:.4f} {args.detector}_OR={or_scores[-1]:.4f} "
               f"cusum_peak={cusum_peaks[-1]:.2f}"
               + (f" DETECTED@t={cusum_delays[-1]}" if cusum_delays[-1] is not None else ""))
 

@@ -19,8 +19,7 @@ from gymnasium.spaces import Box
 from examples.eval_robust_detector import Victim
 from examples.train_obs_attacker import AntTrueDynamics, project_budget
 from harl.attacks.adversary_ac import AdversaryActorCritic
-from harl.detectors.pedm_detector import PEDMDetector
-from examples.eval_mujoco_marl_vs_pedm import cusum_stat
+from examples.eval_mujoco_marl_vs_pedm import build_detector, cusum_stat
 
 
 def main():
@@ -28,9 +27,14 @@ def main():
     ap.add_argument("--ckpt", type=str, required=True)
     ap.add_argument("--scenario", type=str, required=True)
     ap.add_argument("--victim_run", type=str, required=True)
-    ap.add_argument("--pedm_ckpt", type=str, required=True)
+    ap.add_argument("--pedm_ckpt", type=str, required=True,
+                     help="Detector checkpoint path (pedm_detector.pt or cotd_detector.pt "
+                          "depending on --detector)")
     ap.add_argument("--episodes", type=int, default=15)
     ap.add_argument("--quantile", type=float, default=0.97)
+    ap.add_argument("--detector", type=str, default="pedm", choices=["pedm", "cotd"],
+                     help="pedm (default, deterministic forward-prediction) or cotd "
+                          "(CVAE-ensemble reconstruction detector, arXiv:2503.05238)")
     args = ap.parse_args()
 
     device = "cpu"
@@ -54,8 +58,7 @@ def main():
     net.load_state_dict(ck["state_dict"])
     net.eval()
 
-    pedm = PEDMDetector(obs_dim=obs_dim, action_dim=act_dim, n_part=100, device="cpu")
-    pedm.load(args.pedm_ckpt)
+    detector = build_detector(args.detector, obs_dim, act_dim, args.pedm_ckpt)
 
     scale = obs_scale
 
@@ -97,9 +100,9 @@ def main():
     clean_scores, clean_rets = [], []
     for i in range(args.episodes):
         o_seq, a_seq, ret = run(4000 + i, attack=False)
-        clean_scores.append(pedm.predict_scores(o_seq, a_seq))
+        clean_scores.append(detector.predict_scores(o_seq, a_seq))
         clean_rets.append(ret)
-    threshold = pedm.calibrate_threshold(clean_scores, quantile=args.quantile)
+    threshold = detector.calibrate_threshold(clean_scores, quantile=args.quantile)
     clean_or = np.array([float(np.max(s)) for s in clean_scores])
     or_tau = float(np.quantile(clean_or, args.quantile))
     clean_flat = np.concatenate([np.ravel(s) for s in clean_scores])
@@ -110,7 +113,7 @@ def main():
     rets, per_step, or_scores, cusum_delays = [], [], [], []
     for i in range(args.episodes):
         o_seq, a_seq, ret = run(9000 + i, attack=True)
-        scores = pedm.predict_scores(o_seq, a_seq)
+        scores = detector.predict_scores(o_seq, a_seq)
         per_step.append(float(np.mean(scores)))
         or_scores.append(float(np.max(scores)))
         rets.append(ret)
