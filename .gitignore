@@ -445,3 +445,10 @@ tags
 !/results/robust_victim/Ant-v4/mappo/victim6m/seed-00001-2026-06-28-01-25-45/config.json
 !/results/robust_victim/Ant-v4/mappo/victim6m/seed-00001-2026-06-28-01-25-45/models/
 !/results/robust_victim/Ant-v4/mappo/victim6m/seed-00001-2026-06-28-01-25-45/models/**
+
+##### Pretrained PEDM detectors, needed by every eval script (2026-09-22) #####
+!/results/obs_attackers/
+!/results/obs_attackers/HalfCheetah-v4/
+!/results/obs_attackers/HalfCheetah-v4/pedm_detector.pt
+!/results/obs_attackers/Hopper-v4/
+!/results/obs_attackers/Hopper-v4/pedm_detector.pt

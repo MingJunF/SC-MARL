@@ -16,10 +16,16 @@ packages from this project's broader history (pandapower, sacred, pettingzoo, et
 **numpy must stay at 1.23.5** -- see the comment in `requirements.txt`. Checkpoints saved under
 numpy>=2.0 fail to load under numpy<2.0 (`ModuleNotFoundError: No module named 'numpy._core'`).
 
-After install, victim checkpoints and PEDM detectors are expected under `results/robust_victim/
-<scenario>/...` and `results/obs_attackers/<scenario>/pedm_detector.pt` -- these are NOT part of
-the git repo (`results/` is gitignored, checkpoints are large binaries) and must be copied over
-separately from wherever the experiments were originally run, or regenerated:
+After install, victim checkpoints and PEDM detectors are needed under `results/robust_victim/
+<scenario>/...` and `results/obs_attackers/<scenario>/pedm_detector.pt`. `results/` is gitignored
+in general (checkpoints are large binaries), but the specific ones this project's scripts
+actually use are explicitly un-ignored and DO ship in this repo (2026-09-22) -- nothing to
+regenerate for a normal clone:
+- victims: `results/robust_victim/{HalfCheetah-v4,Hopper-v4,Ant-v4}/mappo/.../` (one fixed
+  checkpoint per scenario, shared across all attacker seeds).
+- PEDM detectors: `results/obs_attackers/{HalfCheetah-v4,Hopper-v4}/pedm_detector.pt`.
+
+Only regenerate if you need a DIFFERENT victim/detector than the ones checked in:
 - victim: this project's own `train_*_victim.py` / HARL's own `mappo` training on the target
   scenario (not scripted here -- was trained in earlier sessions, copy the checkpoint dir).
 - PEDM detector: `python -m examples.train_pedm_detector --scenario <Scenario-v4> --victim_run
