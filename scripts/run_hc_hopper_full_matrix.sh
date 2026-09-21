@@ -50,7 +50,24 @@
 #   (defaults: 8 threads/job, 3 concurrent jobs)
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-source ~/miniconda3/etc/profile.d/conda.sh 2>/dev/null || source ~/anaconda3/etc/profile.d/conda.sh 2>/dev/null
+# Resolve conda.sh dynamically rather than assuming ~/miniconda3 or ~/anaconda3 -- some
+# containers install conda under /opt (e.g. /opt/miniforge3) with `conda` already on PATH but
+# never `conda init`-ed, in which case a hardcoded ~/... path silently fails to source (2>/dev/
+# null) and `conda activate` then fails too (see environment/install.sh's own fix, same bug).
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base 2>/dev/null)"
+elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/miniconda3"
+elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/anaconda3"
+elif [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/miniforge3"
+elif [ -f "/opt/miniforge3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="/opt/miniforge3"
+fi
+if [ -n "${CONDA_BASE:-}" ] && [ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+fi
 conda activate harl_marl 2>/dev/null || conda activate mujoko 2>/dev/null || {
     echo "no 'harl_marl' or 'mujoko' conda env found -- run environment/install.sh first" >&2
     exit 1
