@@ -1,25 +1,30 @@
 #!/bin/bash
-# Full HC + Ant experiment matrix (2026-09-22), 4 seeds each, max 3 concurrent jobs.
-# HC includes both ablations (hard-constraint, not-alternating); Ant does not (matches this
+# Full HC + Hopper experiment matrix (2026-09-22), 4 seeds each, max 3 concurrent jobs.
+# HC includes both ablations (hard-constraint, not-alternating); Hopper does not (matches this
 # project's own established pattern of scoping ablations to HC only, per explicit user
 # instruction). Uses the CURRENT best-validated settings from this project's debugging history
 # -- see harl/runners/on_policy_lagr_runner.py's `cost_aggregation` docstring and
 # harl/envs/mujoco_marl/mujoco_marl_env.py's `project_budget` usage for the full rationale:
 #   - budget_norm=l2, with the FIXED project_budget (scale-then-project, so `budget` bounds the
 #     REAL physical L2 perturbation identically regardless of the environment's own obs_scale
-#     spread).
+#     spread -- this mattered MOST for Hopper, whose obs_scale spans a 45x range, 5-6x blowing
+#     past the nominal budget under the old buggy projection order).
 #   - cost_aggregation=mean (per-step target, portable across environments whose episodes can
-#     terminate early e.g. from falling -- Ant -- unlike the old per-episode-SUM convention).
+#     terminate early e.g. from falling -- Hopper's attacked episodes run ~97 steps, not 1000 --
+#     unlike the old per-episode-SUM convention, which silently assumed ~1000-step episodes).
 #     This key MUST exist in harl/configs/algos_cfgs/mappo_alt.yaml / mappo_lagr.yaml for the
 #     CLI override to actually take effect -- HARL's update_args() only overrides EXISTING yaml
 #     keys (verify with get_defaults_yaml_args+update_args if in doubt).
 #   - eps_cost is DIFFERENT per environment (calibrated from each env's own clean truedyn
-#     per-step floor, ~10x above it): HalfCheetah -> eps_cost=0.1; Ant -> eps_cost=0.04. A
-#     tighter eps_cost=0.005 was tried for Ant and did NOT improve OR/CUSUM outcomes (in fact
-#     slightly worse at a comparable training stage) -- 0.04 is the current best-known value,
-#     not further tuned in this script.
+#     per-step floor, ~10x above it): HalfCheetah -> eps_cost=0.1; Hopper -> eps_cost=0.03.
 #   - lambda_max=20 (NOT unbounded): an unbounded lambda was tried on Hopper and made results
 #     WORSE (more erratic, some CUSUM peaks went UP) without ever converging.
+#
+# KNOWN RESULT, not yet overturned by any variant tried (7 distinct Hopper configs across this
+# project's debugging history, always with a real attack present): Hopper's SC-MARL checkpoints
+# have NEVER passed CUSUM, not even a single held-out episode out of 15 -- this script re-runs
+# the matrix anyway (more seeds = a cleaner reported negative result, not an attempt to "fix" it
+# further) rather than to chase a pass that has not appeared under any setting so far.
 #
 # Variants:
 #   HC (7 variants x 4 seeds = 28 runs):
@@ -38,10 +43,10 @@
 #     6. concealonly         -- pure Concealment, Disruptor absent (disruptor_eps=0)
 #     7. [ablation] notalt    -- same budgets/eps_cost as scmarl_alt but synchronous mappo_lagr
 #        instead of the alternating scheme
-#   Ant (5 variants x 4 seeds = 20 runs): same as HC variants 1-4 and 6 (no ablations 5/7).
+#   Hopper (5 variants x 4 seeds = 20 runs): same as HC variants 1-4 and 6 (no ablations 5/7).
 #
 # Usage:
-#   bash scripts/run_hc_ant_full_matrix.sh [n_rollout_threads] [max_concurrent_jobs]
+#   bash scripts/run_hc_hopper_full_matrix.sh [n_rollout_threads] [max_concurrent_jobs]
 #   (defaults: 8 threads/job, 3 concurrent jobs)
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -53,7 +58,7 @@ conda activate harl_marl 2>/dev/null || conda activate mujoko 2>/dev/null || {
 
 N_THREADS="${1:-8}"
 MAX_JOBS="${2:-3}"
-LOGDIR=/tmp/hc_ant_full_matrix_logs
+LOGDIR=/tmp/hc_hopper_full_matrix_logs
 mkdir -p "$LOGDIR"
 
 wait_for_slot() {
@@ -73,16 +78,20 @@ queue_job() {
 }
 
 VICTIM_HC=results/robust_victim/HalfCheetah-v4/mappo/victim_halfcheetah/seed-00010-2026-06-24-22-04-33
-VICTIM_ANT=results/robust_victim/Ant-v4/mappo/victim6m/seed-00001-2026-06-28-01-25-45
-# Both must exist BEFORE running this script -- see environment/README.md for how to obtain/
-# regenerate victim checkpoints and PEDM detectors (neither ships in the git repo).
+VICTIM_HOPPER=results/robust_victim/Hopper-v4/mappo/victim6m/seed-00001-2026-06-29-12-56-28
+# Both must exist BEFORE running this script -- both already checked into this repo (see
+# results/robust_victim/), no retraining needed. Hopper also needs a PEDM detector for eval
+# (results/obs_attackers/Hopper-v4/pedm_detector.pt -- NOT checked in, regenerate with
+# `python -m examples.train_pedm_detector --scenario Hopper-v4 --victim_run "$VICTIM_HOPPER"`
+# if missing).
 
-SEEDS="1 2 3 4"
+echo "=================== HC + Hopper FULL MATRIX START $(date) ==================="
+echo "(2026-09-22: pruned to skip seeds that already have valid, matching-config results on"
+echo " disk from this project's 2026-09-20/21 HC/Hopper debugging history -- see the per-block"
+echo " comments below for the exact directory each skip reuses.)"
 
-echo "=================== HC + Ant FULL MATRIX START $(date) ==================="
-
-# --- HC: 1. act-only ---
-for seed in $SEEDS; do
+# --- HC: 1. act-only --- seeds 1-3 already done+valid: results/mujoco_marl/HalfCheetah-v4/mappo_lagr/harl_native_hc_actonly_l2_s{1,2,3} (0/15,0/15,0/15 both OR+CUSUM). Only seed 4 needed.
+for seed in 4; do
     queue_job "hc_actonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_actonly_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -91,24 +100,24 @@ for seed in $SEEDS; do
         --constraint_mode illu --lambda_init 0.0 --seed ${seed}
 done
 
-# --- HC: 2. obs-only (NEW, no illusory constraint) ---
-for seed in $SEEDS; do
+# --- HC: 2. obs-only (NEW, no illusory constraint) --- never run before, all 4 seeds needed.
+for seed in 1 2 3 4; do
     queue_job "hc_obsonly_s${seed}" python -u -m examples.train_obs_attacker --scenario HalfCheetah-v4 \
         --mode ppo --attack obs --budget 0.2 --budget_norm l2 \
         --victim_run "$VICTIM_HC" --num_env_steps 4000000 --log_interval 20 \
         --save_dir "results/obs_attackers/HalfCheetah-v4/obsonly_matrix_s${seed}" --seed ${seed}
 done
 
-# --- HC: 3. illusory ---
-for seed in $SEEDS; do
+# --- HC: 3. illusory --- seeds 1-3 already done+valid: results/obs_attackers/HalfCheetah-v4/illusory_l2_matrix_s{1,2,3}. Only seed 4 needed.
+for seed in 4; do
     queue_job "hc_illusory_s${seed}" python -u -m examples.train_obs_attacker --scenario HalfCheetah-v4 \
         --mode illusory --attack obs --budget 0.2 --budget_norm l2 \
         --victim_run "$VICTIM_HC" --num_env_steps 4000000 --log_interval 20 \
         --save_dir "results/obs_attackers/HalfCheetah-v4/illusory_matrix_s${seed}" --seed ${seed}
 done
 
-# --- HC: 4. SC-MARL alternating (main method) ---
-for seed in $SEEDS; do
+# --- HC: 4. SC-MARL alternating (main method) --- seeds 1-3 already done+valid: harl_native_hc_scmarl_alt_fixed_s1, _s2, _s3 (eps_cost=100/alpha_lambda=0.1 under "sum" aggregation -- mathematically IDENTICAL to eps_cost=0.1/alpha_lambda=100 under "mean" here, since HC episodes are always exactly 1000 steps, a constant scale factor). Only seed 4 needed.
+for seed in 4; do
     queue_job "hc_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hc_scmarl_alt_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -118,8 +127,8 @@ for seed in $SEEDS; do
         --k_hidden 5 --k_perf 2 --lambda_update_period 5 --seed ${seed}
 done
 
-# --- HC: 5. [ablation] hard-constraint ---
-for seed in $SEEDS; do
+# --- HC: 5. [ablation] hard-constraint --- seeds 1-3 already done+valid: harl_native_hc_hardconstraint_s{1,2,3} (same sum/mean equivalence as above). Only seed 4 needed.
+for seed in 4; do
     queue_job "hc_hardconstraint_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hc_hardconstraint_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -129,8 +138,8 @@ for seed in $SEEDS; do
         --k_hidden 5 --k_perf 2 --lambda_update_period 5 --seed ${seed}
 done
 
-# --- HC: 6. concealer-only ---
-for seed in $SEEDS; do
+# --- HC: 6. concealer-only --- seeds 1-3 already done+valid: harl_native_hc_concealonly_l2_s{1,2,3} (same sum/mean equivalence). Only seed 4 needed.
+for seed in 4; do
     queue_job "hc_concealonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_concealonly_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -139,8 +148,8 @@ for seed in $SEEDS; do
         --constraint_mode soft --cost_aggregation mean --eps_cost 0.1 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 --seed ${seed}
 done
 
-# --- HC: 7. [ablation] not-alternating (synchronous) ---
-for seed in $SEEDS; do
+# --- HC: 7. [ablation] not-alternating (synchronous) --- seeds 2,3 already done+valid: harl_native_hc_notalt_l2_s{2,3}. Seed 1 must be REDONE (the old seed1, harl_native_hc_v8_sync_ablation, used L-infinity not L2 -- a norm mismatch, CUSUM 4/15 vs seeds 2/3's 0/15). Seed 4 also needed.
+for seed in 1 4; do
     queue_job "hc_notalt_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_notalt_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -149,56 +158,56 @@ for seed in $SEEDS; do
         --constraint_mode soft --cost_aggregation mean --eps_cost 0.1 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 --seed ${seed}
 done
 
-# --- Ant: 1. act-only ---
-for seed in $SEEDS; do
-    queue_job "ant_actonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
-        --exp_name harl_native_ant_actonly_s${seed} \
-        --scenario Ant-v4 --victim_run "$VICTIM_ANT" \
+# --- Hopper: 1. act-only --- seeds 1,2 already done+valid (L2-budget-fix applied; cost_aggregation is irrelevant here since constraint_mode=illu/lambda_init=0 never updates lambda regardless): results/mujoco_marl/Hopper-v4/mappo_lagr/harl_native_hopper_actonly_l2_fixed_s{1,2}. Seeds 3,4 needed.
+for seed in 3 4; do
+    queue_job "hopper_actonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
+        --exp_name harl_native_hopper_actonly_s${seed} \
+        --scenario Hopper-v4 --victim_run "$VICTIM_HOPPER" \
         --n_rollout_threads "$N_THREADS" --episode_length 200 --num_env_steps 4000000 --log_interval 5 --use_eval False \
         --disruptor_eps 0.4 --hidden_eps 0 --hidden_act_eps 0 --budget_norm l2 \
         --constraint_mode illu --lambda_init 0.0 --seed ${seed}
 done
 
-# --- Ant: 2. obs-only (NEW, no illusory constraint) ---
-for seed in $SEEDS; do
-    queue_job "ant_obsonly_s${seed}" python -u -m examples.train_obs_attacker --scenario Ant-v4 \
+# --- Hopper: 2. obs-only (NEW, no illusory constraint) --- never run before, all 4 seeds needed.
+for seed in 1 2 3 4; do
+    queue_job "hopper_obsonly_s${seed}" python -u -m examples.train_obs_attacker --scenario Hopper-v4 \
         --mode ppo --attack obs --budget 0.2 --budget_norm l2 \
-        --victim_run "$VICTIM_ANT" --num_env_steps 4000000 --log_interval 20 \
-        --save_dir "results/obs_attackers/Ant-v4/obsonly_matrix_s${seed}" --seed ${seed}
+        --victim_run "$VICTIM_HOPPER" --num_env_steps 4000000 --log_interval 20 \
+        --save_dir "results/obs_attackers/Hopper-v4/obsonly_matrix_s${seed}" --seed ${seed}
 done
 
-# --- Ant: 3. illusory ---
-for seed in $SEEDS; do
-    queue_job "ant_illusory_s${seed}" python -u -m examples.train_obs_attacker --scenario Ant-v4 \
+# --- Hopper: 3. illusory --- seed 1 already done+valid (post L2-fix, created 13:44 vs the invalid pre-fix s1/s2/s3 at 08:09): results/obs_attackers/Hopper-v4/illusory_l2_matrix_fixed_s1. Seeds 2-4 needed.
+for seed in 2 3 4; do
+    queue_job "hopper_illusory_s${seed}" python -u -m examples.train_obs_attacker --scenario Hopper-v4 \
         --mode illusory --attack obs --budget 0.2 --budget_norm l2 \
-        --victim_run "$VICTIM_ANT" --num_env_steps 4000000 --log_interval 20 \
-        --save_dir "results/obs_attackers/Ant-v4/illusory_matrix_s${seed}" --seed ${seed}
+        --victim_run "$VICTIM_HOPPER" --num_env_steps 4000000 --log_interval 20 \
+        --save_dir "results/obs_attackers/Hopper-v4/illusory_matrix_s${seed}" --seed ${seed}
 done
 
-# --- Ant: 4. SC-MARL alternating (main method) ---
-for seed in $SEEDS; do
-    queue_job "ant_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
-        --exp_name harl_native_ant_scmarl_alt_s${seed} \
-        --scenario Ant-v4 --victim_run "$VICTIM_ANT" \
+# --- Hopper: 4. SC-MARL alternating (main method) --- seed 1 already done+valid: harl_native_hopper_scmarl_alt_meancost_real_s1 (config-verified: L2-fixed budget AND cost_aggregation=mean genuinely applied, eps_cost=0.03/alpha_lambda=100/lambda_init=10/lambda_max=20/k_hidden=5/k_perf=2 -- every earlier Hopper scmarl_alt dir, "_fixed_s1" included, predates the cost_aggregation yaml fix and was secretly still "sum"). Seeds 2-4 needed. KNOWN RESULT: this checkpoint still fails CUSUM (15/15) -- expected, not a bug, see header comment.
+for seed in 2 3 4; do
+    queue_job "hopper_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
+        --exp_name harl_native_hopper_scmarl_alt_s${seed} \
+        --scenario Hopper-v4 --victim_run "$VICTIM_HOPPER" \
         --n_rollout_threads "$N_THREADS" --episode_length 1000 --num_env_steps 4000000 --log_interval 5 --use_eval False \
         --disruptor_eps 0.4 --hidden_eps 0.2 --hidden_act_eps 0.2 --budget_norm l2 \
-        --constraint_mode soft --cost_aggregation mean --eps_cost 0.04 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 \
+        --constraint_mode soft --cost_aggregation mean --eps_cost 0.03 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 \
         --k_hidden 5 --k_perf 2 --lambda_update_period 5 --seed ${seed}
 done
 
-# --- Ant: 5. concealer-only ---
-for seed in $SEEDS; do
-    queue_job "ant_concealonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
-        --exp_name harl_native_ant_concealonly_s${seed} \
-        --scenario Ant-v4 --victim_run "$VICTIM_ANT" \
+# --- Hopper: 5. concealer-only --- the only existing dirs (harl_native_hopper_concealonly_l2_s{1,2,3}) predate the L2-budget fix (mtime 09:58 on 2026-09-21, before the ~13:xx fix) -- no "_fixed" variant was ever run. All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
+    queue_job "hopper_concealonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
+        --exp_name harl_native_hopper_concealonly_s${seed} \
+        --scenario Hopper-v4 --victim_run "$VICTIM_HOPPER" \
         --n_rollout_threads "$N_THREADS" --episode_length 200 --num_env_steps 4000000 --log_interval 5 --use_eval False \
         --disruptor_eps 0 --hidden_eps 0.2 --hidden_act_eps 0.2 --budget_norm l2 \
-        --constraint_mode soft --cost_aggregation mean --eps_cost 0.04 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 --seed ${seed}
+        --constraint_mode soft --cost_aggregation mean --eps_cost 0.03 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 --seed ${seed}
 done
 
 echo "waiting for all jobs to finish..."
 wait
-echo "=================== HC + Ant FULL MATRIX COMPLETE $(date) ==================="
+echo "=================== HC + Hopper FULL MATRIX COMPLETE $(date) ==================="
 echo "ALL DONE"
 echo "Evaluate mujoco_marl-based variants with:"
 echo "  python -m examples.eval_mujoco_marl_vs_pedm --run_dir results/mujoco_marl/<Scenario-v4>/<mappo_alt|mappo_lagr>/<exp_name> --episodes 15"
