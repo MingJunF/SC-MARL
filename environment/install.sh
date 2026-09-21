@@ -21,19 +21,32 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Prefer whichever conda is already on PATH / sourced by the user's shell profile; fall back
-# to the two most common install locations if `conda` isn't found yet in this non-interactive
-# shell.
-if ! command -v conda >/dev/null 2>&1; then
-    if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
-        source "$HOME/miniconda3/etc/profile.d/conda.sh"
-    elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
-        source "$HOME/anaconda3/etc/profile.d/conda.sh"
-    else
-        echo "conda not found -- install Miniconda/Anaconda first: https://docs.conda.io/en/latest/miniconda.html" >&2
-        exit 1
-    fi
+# `conda activate` needs the shell FUNCTION that conda.sh installs, not just the `conda`
+# binary on PATH -- a non-interactive script's shell never gets that function just because
+# `command -v conda` succeeds (this bit a fresh container whose base env was already active
+# via `conda`/PATH but had never run `conda init`: `conda activate` failed with "CondaError:
+# Run 'conda init' before 'conda activate'", `set -e` then killed the script BEFORE any pip
+# install ran, silently leaving the env with nothing but bare python in it). So: always
+# locate and source conda.sh, regardless of whether `conda` is already callable.
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base 2>/dev/null)"
+elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/miniconda3"
+elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/anaconda3"
+elif [ -f "$HOME/miniforge3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/miniforge3"
+elif [ -f "/opt/miniforge3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="/opt/miniforge3"
+else
+    echo "conda not found -- install Miniconda/Anaconda/Miniforge first: https://docs.conda.io/en/latest/miniconda.html" >&2
+    exit 1
 fi
+if [ ! -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
+    echo "conda found on PATH but ${CONDA_BASE}/etc/profile.d/conda.sh is missing -- unusual install layout, source your conda.sh manually before re-running this script" >&2
+    exit 1
+fi
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
 
 if conda env list | grep -qE "^${ENV_NAME}\s"; then
     echo "[install.sh] conda env '${ENV_NAME}' already exists -- reusing it (delete it first with 'conda env remove -n ${ENV_NAME}' for a clean reinstall)."
