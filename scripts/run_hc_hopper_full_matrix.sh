@@ -103,9 +103,10 @@ VICTIM_HOPPER=results/robust_victim/Hopper-v4/mappo/victim6m/seed-00001-2026-06-
 # if missing).
 
 echo "=================== HC + Hopper FULL MATRIX START $(date) ==================="
-echo "(2026-09-22: pruned to skip seeds that already have valid, matching-config results on"
-echo " disk from this project's 2026-09-20/21 HC/Hopper debugging history -- see the per-block"
-echo " comments below for the exact directory each skip reuses.)"
+echo "(2026-09-22: most existing checkpoints from this project's 2026-09-20/21 HC/Hopper"
+echo " debugging history were later found to predate the L2 project_budget fix -- see each"
+echo " block's own comment for what's still reused (Hopper, HC act-only/illusory-seed4) vs"
+echo " retrained fresh from scratch (everything else with a Concealment obs-forgery channel).)"
 
 # --- HC: 1. act-only --- seeds 1-3 already done+valid: results/mujoco_marl/HalfCheetah-v4/mappo_lagr/harl_native_hc_actonly_l2_s{1,2,3} (0/15,0/15,0/15 both OR+CUSUM). Only seed 4 needed.
 for seed in 4; do
@@ -142,8 +143,18 @@ for seed in 1 2 3 4; do
         --save_dir "results/obs_attackers/HalfCheetah-v4/illusory_matrix_s${seed}" --seed ${seed}
 done
 
-# --- HC: 4. SC-MARL alternating (main method) --- seeds 1-3 already done+valid: harl_native_hc_scmarl_alt_fixed_s1, _s2, _s3 (eps_cost=100/alpha_lambda=0.1 under "sum" aggregation -- mathematically IDENTICAL to eps_cost=0.1/alpha_lambda=100 under "mean" here, since HC episodes are always exactly 1000 steps, a constant scale factor). Only seed 4 needed.
-for seed in 4; do
+# --- HC: 4. SC-MARL alternating (main method) --- CORRECTED 2026-09-22 (was wrongly marked
+# "seeds 1-3 valid, only 4 needed" -- same bug class as illusory above, verified false, this
+# time via a sharper diagnostic than just perturbation norm): re-ran hc_scmarl_alt_fixed_s1's
+# actual training objective (the illusory-consistency stealth_cost Concealment was trained to
+# push toward eps_cost=0.1) through both projection versions. Under the CURRENT fixed
+# projection the cost sits at 0.0216 -- comfortably (4.6x) under target, NOT the behavior of a
+# converged Lagrangian-constrained policy (which should sit AT its own target, not leave stealth
+# budget unused). Under the OLD buggy projection the cost sits at 0.0955 -- almost exactly AT
+# the 0.1 target, the textbook signature of a policy that was actually trained against THAT
+# projection. Strong evidence this checkpoint (and very likely s2/s3, which share the same
+# un-suffixed launch batch) was trained pre-L2-fix. All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
     queue_job "hc_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hc_scmarl_alt_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -153,8 +164,13 @@ for seed in 4; do
         --k_hidden 5 --k_perf 2 --lambda_update_period 5 --seed ${seed}
 done
 
-# --- HC: 5. [ablation] hard-constraint --- seeds 1-3 already done+valid: harl_native_hc_hardconstraint_s{1,2,3} (same sum/mean equivalence as above). Only seed 4 needed.
-for seed in 4; do
+# --- HC: 5. [ablation] hard-constraint --- CORRECTED 2026-09-22: same un-suffixed launch batch
+# as scmarl_alt above (harl_native_hc_hardconstraint_s{1,2,3}, no "_fixed" marker at all) --
+# not independently re-verified with the cost-target diagnostic (constraint_mode=hard doesn't
+# track a continuous target the same way), but given scmarl_alt from the SAME batch tested
+# positive for pre-fix training, treating this as equally suspect rather than assuming it's
+# fine. All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
     queue_job "hc_hardconstraint_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hc_hardconstraint_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -164,8 +180,14 @@ for seed in 4; do
         --k_hidden 5 --k_perf 2 --lambda_update_period 5 --seed ${seed}
 done
 
-# --- HC: 6. concealer-only --- seeds 1-3 already done+valid: harl_native_hc_concealonly_l2_s{1,2,3} (same sum/mean equivalence). Only seed 4 needed.
-for seed in 4; do
+# --- HC: 6. concealer-only --- CORRECTED 2026-09-22: cost-target diagnostic on
+# harl_native_hc_concealonly_l2_s1 was actually AMBIGUOUS (cost sat well under the 0.1 target
+# under BOTH old and new projection -- 0.025 vs 0.014 -- neither showing the clean
+# "sits-at-boundary" signature scmarl_alt_s1 showed), so this is not confirmed broken. Retrained
+# anyway per explicit user call ("重新训练比排查更便宜" -- given the investigation cost already
+# sunk into this bug class, retraining fresh is cheaper than fully resolving the ambiguity).
+# All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
     queue_job "hc_concealonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_concealonly_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -174,8 +196,13 @@ for seed in 4; do
         --constraint_mode soft --cost_aggregation mean --eps_cost 0.1 --alpha_lambda 100 --lambda_init 10.0 --lambda_max 20.0 --seed ${seed}
 done
 
-# --- HC: 7. [ablation] not-alternating (synchronous) --- seeds 2,3 already done+valid: harl_native_hc_notalt_l2_s{2,3}. Seed 1 must be REDONE (the old seed1, harl_native_hc_v8_sync_ablation, used L-infinity not L2 -- a norm mismatch, CUSUM 4/15 vs seeds 2/3's 0/15). Seed 4 also needed.
-for seed in 1 4; do
+# --- HC: 7. [ablation] not-alternating (synchronous) --- CORRECTED 2026-09-22: seed 1 was
+# already known-bad (harl_native_hc_v8_sync_ablation reused L-infinity, not L2 -- norm
+# mismatch). Seeds 2/3's own cost-target diagnostic (checked via harl_native_hc_notalt_l2_s2)
+# was also AMBIGUOUS the same way concealonly's was (0.047 vs 0.034, neither at the 0.1
+# boundary) -- not confirmed broken, retrained anyway for the same reason as concealonly
+# above. All 4 seeds needed fresh.
+for seed in 1 2 3 4; do
     queue_job "hc_notalt_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_notalt_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
