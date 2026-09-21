@@ -1,0 +1,128 @@
+# MAPPO + soft Lagrangian stealth-cost constraint ("SC-MARL").
+# Disruptor and Concealment are heterogeneous roles (different obs/action semantics),
+# so share_param must stay False. The cost signal is the illusory-consistency error
+# against the true dynamics model (see SafetyMARLEnv), delivered via info["cost"].
+seed:
+  seed_specify: True
+  seed: 1
+device:
+  cuda: True
+  cuda_deterministic: True
+  torch_threads: 4
+train:
+  n_rollout_threads: 20
+  num_env_steps: 10000000
+  episode_length: 200
+  log_interval: 5
+  eval_interval: 25
+  use_valuenorm: True
+  use_linear_lr_decay: False
+  use_proper_time_limits: True
+  model_dir: ~
+eval:
+  use_eval: True
+  n_eval_rollout_threads: 10
+  eval_episodes: 20
+render:
+  use_render: False
+  render_episodes: 10
+model:
+  hidden_sizes: [128, 128]
+  activation_func: relu
+  use_feature_normalization: True
+  initialization_method: orthogonal_
+  gain: 0.01
+  use_naive_recurrent_policy: False
+  use_recurrent_policy: False
+  recurrent_n: 1
+  data_chunk_length: 10
+  lr: 0.0005
+  critic_lr: 0.0005
+  opti_eps: 0.00001
+  weight_decay: 0
+  std_x_coef: 1
+  std_y_coef: 0.5
+algo:
+  ppo_epoch: 5
+  critic_epoch: 5
+  use_clipped_value_loss: True
+  clip_param: 0.2
+  actor_num_mini_batch: 1
+  critic_num_mini_batch: 1
+  entropy_coef: 0.01
+  value_loss_coef: 1
+  use_max_grad_norm: True
+  max_grad_norm: 10.0
+  use_gae: True
+  gamma: 0.99
+  gae_lambda: 0.95
+  use_huber_loss: True
+  use_policy_active_masks: True
+  huber_delta: 10.0
+  # mean instead of prod: avoids numerical blowup aggregating log-probs over the
+  # Concealment agent's 64-dim continuous action.
+  action_aggregation: mean
+  # heterogeneous roles: Disruptor and Concealment must NOT share weights.
+  share_param: False
+  fixed_order: True
+  # --- stealth-cost constraint (soft/Lagrangian variant) ---
+  constraint_mode: soft
+  # 2026-09-21 bug fix: must exist here for `--cost_aggregation mean` CLI overrides to take
+  # effect (HARL's update_args() only overrides EXISTING yaml keys) -- see mappo_alt.yaml's own
+  # comment and harl/runners/on_policy_lagr_runner.py's docstring for the full rationale.
+  cost_aggregation: sum
+  # per-step stealth-cost budget the dual variable targets (mean over the rollout).
+  # Calibrated against the CLEAN/honest baseline (zero perturbation on both channels):
+  # mean~0.84, median~0.41, p90~1.98 over 3000 steps -- clean rollouts are not 0 (same
+  # lesson as PEDM's eps_pedm=0.0281), so eps_cost should sit near that clean mean, not near 0.
+  eps_cost: 1.0
+  # 2026-09-20, user-request: rolling window (in COMPLETED episodes) that `mean_cost` averages
+  # over -- was hardcoded to 50, now configurable. A shorter window reacts faster to recent
+  # episodes (less lag when a spike needs to age out), at the cost of a noisier estimate.
+  mean_cost_window: 5
+  # discount for the cost critic. This cost is a DENSE per-step signal (illusory
+  # consistency error), not a sparse/terminal one -- match gamma so cost/reward returns
+  # sit on comparable temporal-accumulation scales (gamma_c=1.0 previously inflated cost
+  # returns ~30-100x reward returns: cost_value_loss~350-560 vs value_loss~0.001-0.2).
+  gamma_c: 0.99
+  # dual-ascent step size for lambda. Small: mean_cost starts ~636 (random policy) vs
+  # eps_cost=1.0, so a large alpha_lambda (e.g. 0.05) saturates lambda to lambda_max in
+  # the very FIRST update, making "soft" indistinguishable from "hard" bang-bang.
+  alpha_lambda: 0.002
+  # cap on the Lagrange multiplier.
+  lambda_max: 20.0
+  lambda_init: 0.0
+  # --- TrajectoryCritic (only used when env_args.stealth_source == "traj_critic") ---
+  traj_hidden: 128
+  traj_lr: 0.001
+  traj_epoch: 4
+  n_clean_ref: 64
+  # 2026-09-19: if True, combine adv_r - lam*adv_c RAW then normalize ONCE (isolated
+  # ablation of the advantage-normalization fix -- see on_policy_lagr_runner.py's train()).
+  # If False (default), normalize adv_r/adv_c separately before combining (original behavior).
+  combine_then_normalize: False
+  # 2026-09-19: "hidden catch-up test" diagnostic pair -- resume from a checkpoint via
+  # train.model_dir, hold lambda fixed (freeze_lambda) and skip the Disruptor's actor update
+  # entirely (freeze_disruptor), so only Concealment keeps adapting against a frozen target.
+  freeze_lambda: False
+  freeze_disruptor: False
+  # 2026-09-19, ATLA-inspired fix for clip saturation (both Disruptor and Concealment
+  # independently confirmed, via direct actor-network inspection, to drift their raw Gaussian
+  # mean far outside their own clip window -- causing near-100% saturation into a constant,
+  # state-independent action). A tried-and-reverted intervention-cost regularizer is NOT used
+  # here (per explicit user redirect "不要加正则化了没意义"); instead these three control the
+  # DISTRIBUTION directly -- log_std is force-initialized to `hidden_log_std_init` at startup
+  # and clamped to [hidden_log_std_min, hidden_log_std_max] after every update, keeping the raw
+  # (pre-squash) output naturally within a range where the env's tanh-squash still has a live
+  # gradient. entropy_coef is also force-set to 0.0 for both actors (see __init__) so entropy's
+  # upward pressure on std doesn't fight this. Actual std = sigmoid(log_std/std_x_coef)*std_y_coef
+  # (std_y_coef=0.5 by default), so log_std=-1.0 -> std~0.27, clamp range [-3,0] -> std in
+  # [~0.10, ~0.31].
+  hidden_log_std_init: -1.0
+  hidden_log_std_min: -3.0
+  hidden_log_std_max: 0.0
+  # --- Alternating SC-MAPPO only (see on_policy_alternating_lagr_runner.py) ---
+  k_hidden: 2
+  lambda_update_period: 5
+logger:
+  log_dir: "./results"

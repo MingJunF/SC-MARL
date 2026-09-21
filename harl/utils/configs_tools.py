@@ -66,6 +66,12 @@ def get_task_name(env, env_args):
         task = env_args["task"]
     elif env == "lag":
         task = f"{env_args['scenario']}-{env_args['task']}"
+    elif env == "safety_marl":
+        task = env_args.get("scenario", "SafetyPointGoal1Gymnasium-v0")
+    elif env == "safety_illusory":
+        task = env_args.get("scenario", "SafetyPointGoal1Gymnasium-v0")
+    elif env == "mujoco_marl":
+        task = env_args.get("scenario", "HalfCheetah-v4")
     return task
 
 

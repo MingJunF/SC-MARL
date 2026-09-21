@@ -1,0 +1,19 @@
+# Curated dependencies for this project's HARL-native SC-MARL role-split experiments
+# (mujoco_marl / safety_marl envs, on_policy_lagr / on_policy_alternating_lagr runners,
+# examples/train_obs_attacker.py, examples/eval_*_vs_pedm.py, PEDM detector).
+# torch is installed separately in install.sh (needs the CUDA index URL) -- not listed here.
+#
+# numpy MUST stay pinned at 1.23.5: checkpoints (.pt files with embedded numpy arrays, e.g.
+# illusory attacker checkpoints) saved under numpy>=2.0 fail to torch.load() under numpy<2.0
+# with "ModuleNotFoundError: No module named 'numpy._core'" (numpy 2.0 introduced that module
+# path) -- confirmed painfully during this project's own history. Do not bump this casually.
+numpy==1.23.5
+gymnasium==0.28.1
+gymnasium-robotics==1.2.2
+mujoco==2.3.3
+safety-gymnasium==1.0.0
+scipy==1.15.3
+PyYAML==6.0.3
+tensorboard==2.20.0
+tensorboardX==2.6.5
+wandb==0.26.1

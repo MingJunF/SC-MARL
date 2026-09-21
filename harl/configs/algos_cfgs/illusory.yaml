@@ -1,0 +1,96 @@
+# Configuration for the illusory-attack adversary and PEDM detector.
+# This trains an observation-perturbation adversary against a frozen, pre-trained
+# HARL victim policy, following Franzmeyer et al., "Illusory Attacks:
+# Information-theoretic detectability matters in adversarial attacks" (ICLR 2024).
+seed:
+  # whether to use the specified seed
+  seed_specify: True
+  # seed
+  seed: 1
+device:
+  # whether to use CUDA
+  cuda: True
+  # whether to set CUDA deterministic
+  cuda_deterministic: True
+  # arg to torch.set_num_threads
+  torch_threads: 4
+logger:
+  # logging directory
+  log_dir: "./results"
+victim:
+  # path to the victim's saved config.json (produced when the victim was trained)
+  config: ~
+  # path to the directory holding the victim's actor_agent*.pt checkpoints
+  model_dir: ~
+train:
+  # number of parallel environments for training data collection
+  n_rollout_threads: 20
+  # number of total adversary training steps
+  num_env_steps: 5000000
+  # number of steps per environment per rollout
+  episode_length: 200
+  # logging interval (in updates)
+  log_interval: 5
+  # evaluation interval (in updates)
+  eval_interval: 25
+eval:
+  # number of parallel environments for evaluation
+  n_eval_rollout_threads: 10
+  # number of episodes per evaluation setting (clean / attacked)
+  eval_episodes: 20
+attack:
+  # perturbation budget (L_inf, per observation dimension). null/0 => unbounded
+  epsilon: 0.5
+  # weight of the illusory (detectability) reward term
+  lambda_illu: 1.0
+  # which agents to attack: "all" or an explicit list e.g. [0, 1]
+  target_agents: "all"
+  # whether the victim acts deterministically under attack
+  victim_deterministic: True
+adversary:
+  # hidden layer width of the adversary actor-critic
+  hidden_size: 256
+  # activation function: tanh or relu
+  activation: tanh
+  # adversary learning rate
+  lr: 0.0003
+  # discount factor
+  gamma: 0.99
+  # GAE lambda
+  gae_lambda: 0.95
+  # PPO clip range
+  clip_eps: 0.2
+  # entropy coefficient
+  ent_coef: 0.0
+  # value loss coefficient
+  vf_coef: 0.5
+  # gradient clipping norm
+  max_grad_norm: 0.5
+  # number of PPO epochs per update
+  ppo_epoch: 4
+  # number of minibatches per PPO epoch
+  num_mini_batch: 4
+dynamics:
+  # number of ensemble members in the PEDM dynamics model
+  ens_size: 5
+  # hidden layer sizes of each ensemble member
+  hidden_sizes: [200, 200, 200]
+  # dynamics model learning rate
+  lr: 0.001
+  # number of clean episodes collected to fit the dynamics model
+  n_pretrain_episodes: 100
+  # number of epochs to train the dynamics model
+  n_train_epochs: 200
+  # batch size for dynamics training
+  batch_size: 512
+detector:
+  # whether to run the PEDM anomaly detector during evaluation
+  enable: True
+  # anomaly criterion: pred_error_samples, pred_std_samples, pred_error_pdf, p_value
+  criterion: pred_error_samples
+  # particle/member aggregation: min_mean, max_mean, mean_mean, median_mean, ...
+  aggregation_function: min_mean
+  # number of particles sampled from the ensemble
+  n_part: 100
+  # quantile of clean scores used as the detection threshold
+  threshold_quantile: 0.95

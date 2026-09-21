@@ -21,4 +21,7 @@ ALGO_REGISTRY = {
     "maddpg": MADDPG,
     "matd3": MATD3,
     "mappo": MAPPO,
+    "mappo_lagr": MAPPO,
+    "mappo_hard": MAPPO,
+    "mappo_alt": MAPPO,
 }

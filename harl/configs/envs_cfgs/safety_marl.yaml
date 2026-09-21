@@ -1,0 +1,27 @@
+scenario: SafetyPointGoal1Gymnasium-v0
+victim_ckpt: results/safety_gym/SafetyPointGoal1/victim/victim_v23_backup_41pct.pt
+wm_ckpt: results/safety_gym/SafetyPointGoal1/attacker_wm_v23_fulldim.pt
+# stealth_source: "wm" (illusory-consistency, diagnosed 2026-09-17/18 to be blind to sustained
+# hazard-dwelling duration), "pedm_or" (running-max-increment of PEDM's score on the deceiver's
+# own forged (o_rep,a_v) record, targeting the OR/episode-max detection criterion -- also found
+# not to meaningfully suppress the attack even near lambda_max), or "traj_critic" (2026-09-18,
+# detector-independent: an online GRU discriminator co-trained against clean reference
+# trajectories -- see OnPolicyLagrRunner._init_traj_critic).
+stealth_source: traj_critic
+pedm_ckpt: results/safety_gym/SafetyPointGoal1/pedm_detector_v23.pt
+disruptor_eps: 1.5
+hidden_eps: 0.2
+# 2026-09-19: budget for Concealment's action-forgery channel (a_rep = a_v + phi_hid_act,
+# PEDM/traj_critic-audit-only, zero physical effect) -- see safety_marl_env.py's docstring.
+# Symmetric with hidden_eps (0.2) per explicit user instruction ("给都限定budget 0.2") --
+# both forged fields of the (o_rep,a_rep) record Concealment fabricates get the same budget.
+hidden_act_eps: 0.2
+# 2026-09-20, user-designed distribution-aware concealment parameterization: obs-forgery is now
+# `alpha_obs * clean_obs_scale[i] * tanh(raw_i)`, clipped to +-hidden_eps -- so the same actor
+# output represents roughly the same number of "natural clean-units" of movement on every
+# dimension, instead of the same absolute delta scaled by the victim's own (unrelated)
+# observation normalizer. See safety_marl_env.py's __init__ comment for the full rationale.
+alpha_obs: 1.0
+clean_obs_scale_path: results/safety_gym/SafetyPointGoal1/clean_obs_robust_scale.npy
+max_cycles: 1000
+state_type: EP

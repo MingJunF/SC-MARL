@@ -1,0 +1,12 @@
+scenario: SafetyPointGoal1Gymnasium-v0
+victim_ckpt: results/safety_gym/SafetyPointGoal1/victim/victim_v23_backup_41pct.pt
+wm_ckpt: results/safety_gym/SafetyPointGoal1/attacker_wm_v23_fulldim.pt
+# Fixed constant (matches Illu-Attacks-Jax's own lambda_illu: swept OFFLINE via hyperparameter
+# search, never dual-ascended). reward = haz_shaping + lambda_illu * illu_reward.
+lambda_illu: 1.0
+# Optional L-infinity budget (2026-09-19): null/0 = unclipped (original reference's own
+# behavior); a positive value clips the perturbation per-dimension to [-budget,budget],
+# matching this project's own `hidden_eps` convention for the same channel in SafetyMARLEnv.
+budget: null
+max_cycles: 1000
+state_type: EP

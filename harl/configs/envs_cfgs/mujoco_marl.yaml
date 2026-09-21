@@ -1,0 +1,22 @@
+scenario: HalfCheetah-v4
+victim_run: results/robust_victim/HalfCheetah-v4/mappo/victim_halfcheetah/seed-00010-2026-06-24-22-04-33
+# Same role split as safety_marl (see harl/envs/mujoco_marl/mujoco_marl_env.py's module
+# docstring): agent 0 = Disruptor (physical, L-infinity budget disruptor_eps), agent 1 =
+# Concealment (forges o_rep/a_rep, L-infinity budgets hidden_eps/hidden_act_eps, zero physical
+# effect). Per-dim tanh-squash, same mechanism as safety_marl_env.py -- NOT an L2-ball
+# projection (2026-09-20, user correction "l无线不要l2").
+# 2026-09-20, explicit user values ("act0.4，obs0.2，concealment也是0.2") -- supersede this
+# project's earlier L2-ball "core budget" numbers (B_obs=4/B_act=0.4), which were calibrated
+# for the OLD L2 geometry, not this L-infinity one.
+disruptor_eps: 0.4
+hidden_eps: 0.2
+hidden_act_eps: 0.2
+# 2026-09-20 bug fix: this key must exist here for `--budget_norm l2` to actually override it --
+# HARL's update_args() only overrides EXISTING yaml keys, never adds new ones (see
+# harl/utils/configs_tools.py's update_dict). Without this line, a CLI override was silently
+# ignored and a whole L2-ablation run (harl_native_hc_v9_l2_ablation) trained under the default
+# "linf" geometry the entire time, producing (with the same seed=1 as v7) numerically IDENTICAL
+# eval results to v7 -- not a coincidence, an actual undetected no-op override.
+budget_norm: linf
+max_cycles: 1000
+state_type: EP

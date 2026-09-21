@@ -414,3 +414,9 @@ Sessionx.vim
 tags
 # Persistent undo
 [._]*.un~
+.claude/settings.local.json
+
+##### Project-local, generated/reference artifacts (2026-09-21) #####
+/logs/
+/wandb/
+/Illu-Attacks-Jax/
