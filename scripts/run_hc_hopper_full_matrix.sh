@@ -154,7 +154,10 @@ done
 # the 0.1 target, the textbook signature of a policy that was actually trained against THAT
 # projection. Strong evidence this checkpoint (and very likely s2/s3, which share the same
 # un-suffixed launch batch) was trained pre-L2-fix. All 4 seeds needed fresh.
-for seed in 1 2 3 4; do
+# SKIPPED 2026-09-22: already run directly (outside this script, via individual SSH-launched
+# setsid+nohup commands) and confirmed complete -- all 4 seeds fully converged (665/665
+# updates), evaluated against both PEDM and COTD. Empty seed list below is deliberate.
+for seed in; do
     queue_job "hc_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hc_scmarl_alt_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -238,7 +241,10 @@ for seed in 2 3 4; do
 done
 
 # --- Hopper: 4. SC-MARL alternating (main method) --- seed 1 already done+valid: harl_native_hopper_scmarl_alt_meancost_real_s1 (config-verified: L2-fixed budget AND cost_aggregation=mean genuinely applied, eps_cost=0.03/alpha_lambda=100/lambda_init=10/lambda_max=20/k_hidden=5/k_perf=2 -- every earlier Hopper scmarl_alt dir, "_fixed_s1" included, predates the cost_aggregation yaml fix and was secretly still "sum"). Seeds 2-4 needed. KNOWN RESULT: this checkpoint still fails CUSUM (15/15) -- expected, not a bug, see header comment.
-for seed in 2 3 4; do
+# SKIPPED 2026-09-22: seeds 2-4 already launched directly (outside this script, via individual
+# SSH-launched setsid+nohup commands) and are in progress/complete on this same server --
+# running them again here would duplicate work. Empty seed list below is deliberate.
+for seed in; do
     queue_job "hopper_scmarl_alt_s${seed}" python -u -m examples.train --algo mappo_alt --env mujoco_marl \
         --exp_name harl_native_hopper_scmarl_alt_s${seed} \
         --scenario Hopper-v4 --victim_run "$VICTIM_HOPPER" \
