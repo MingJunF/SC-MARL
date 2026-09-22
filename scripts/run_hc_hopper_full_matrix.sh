@@ -108,8 +108,9 @@ echo " debugging history were later found to predate the L2 project_budget fix -
 echo " block's own comment for what's still reused (Hopper, HC act-only/illusory-seed4) vs"
 echo " retrained fresh from scratch (everything else with a Concealment obs-forgery channel).)"
 
-# --- HC: 1. act-only --- seeds 1-3 already done+valid: results/mujoco_marl/HalfCheetah-v4/mappo_lagr/harl_native_hc_actonly_l2_s{1,2,3} (0/15,0/15,0/15 both OR+CUSUM). Only seed 4 needed.
-for seed in 4; do
+# --- HC: 1. act-only --- SKIPPED 2026-09-22: seed4 already completed on the server (this exact
+# job) before the supervisor process-survival fix; rerunning here would duplicate work.
+for seed in; do
     queue_job "hc_actonly_s${seed}" python -u -m examples.train --algo mappo_lagr --env mujoco_marl \
         --exp_name harl_native_hc_actonly_s${seed} \
         --scenario HalfCheetah-v4 --victim_run "$VICTIM_HC" \
@@ -118,8 +119,9 @@ for seed in 4; do
         --constraint_mode illu --lambda_init 0.0 --seed ${seed}
 done
 
-# --- HC: 2. obs-only (NEW, no illusory constraint) --- never run before, all 4 seeds needed.
-for seed in 1 2 3 4; do
+# --- HC: 2. obs-only (NEW, no illusory constraint) --- SKIPPED 2026-09-22: all 4 seeds already
+# completed on the server before the supervisor process-survival fix; rerunning would duplicate work.
+for seed in; do
     queue_job "hc_obsonly_s${seed}" python -u -m examples.train_obs_attacker --scenario HalfCheetah-v4 \
         --mode ppo --attack obs --budget 0.2 --budget_norm l2 \
         --victim_run "$VICTIM_HC" --num_env_steps 4000000 --log_interval 20 \
