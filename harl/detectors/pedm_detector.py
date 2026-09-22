@@ -47,7 +47,8 @@ class PEDMDetector:
         obs_dim,
         action_dim,
         ens_size=5,
-        hidden_sizes=(200, 200, 200),
+        hidden_sizes=(200, 200, 200, 200),
+        decays=None,
         lr=1e-3,
         n_part=100,
         criterion="pred_error_samples",
@@ -59,6 +60,7 @@ class PEDMDetector:
             action_dim=action_dim,
             ens_size=ens_size,
             hidden_sizes=hidden_sizes,
+            decays=decays,
             lr=lr,
             device=device,
         )

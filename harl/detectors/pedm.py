@@ -5,6 +5,22 @@ adapted for HARL. The model predicts the distribution over the next observation
 given the current observation and action. It is trained on clean (unattacked)
 victim trajectories and reused both as a forward model for the illusory-attack
 reward and as the backbone of the anomaly detector.
+
+2026-09-22 fix: `hidden_sizes` default was (200, 200, 200) -- one hidden layer short
+of the reference implementation this project is supposed to be reproducing. The
+Illusory Attacks paper (Franzmeyer et al., ICLR 2024) states it "implement[s] the
+out-of-distribution detector proposed by Haider et al. (2023) using the
+implementation provided by the authors" (github.com/FraunhoferIKS/pedm-ood) --
+that repo's own `pedm/nn_models/default_cfg.py` uses FOUR 200-unit hidden layers
+for every MuJoCo-family env it configures (e.g. `HopperBulletEnv-v0`:
+`layer_sizes=[18,200,200,200,200,15]`, `MJHalfCheetah-v0`:
+`[24,200,200,200,200,18]`), not three. That same reference config also sets a
+non-None `decays` (per-layer L2 weight-decay coefficients, e.g.
+`[0.000025, 0.00005, 0.000075, 0.000075, 0.0001]`) -- this project's own
+`train_pedm_detector.py` never passed `decays` at all, so `ProbEnsemble`'s
+`compute_decays()` regularization term was silently never applied (its own
+`if self.decays is not None` guard skipped it entirely). Both are now fixed to
+match the reference for HalfCheetah/Hopper.
 """
 
 from typing import Tuple
@@ -23,7 +39,7 @@ class PEDM(ProbEnsemble):
         obs_dim,
         action_dim,
         ens_size=5,
-        hidden_sizes=(200, 200, 200),
+        hidden_sizes=(200, 200, 200, 200),
         decays=None,
         lr=1e-3,
         normalize_data=True,

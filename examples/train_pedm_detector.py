@@ -29,6 +29,14 @@ def main():
     ap.add_argument("--n_part", type=int, default=100)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=str, required=True)
+    ap.add_argument(
+        "--decays", type=float, nargs=5, default=[0.000025, 0.00005, 0.000075, 0.000075, 0.0001],
+        help="Per-layer L2 weight-decay coefficients (5 values, one per Linear layer: 4 hidden "
+             "+ output). 2026-09-22 fix: this was never passed at all before, silently disabling "
+             "ProbEnsemble's own decay regularization term. Default matches the reference PEDM "
+             "implementation's (github.com/FraunhoferIKS/pedm-ood) own HalfCheetah/Hopper config "
+             "exactly -- see harl/detectors/pedm.py's module docstring.",
+    )
     args = ap.parse_args()
 
     np.random.seed(args.seed)
@@ -75,7 +83,9 @@ def main():
     fit_nobs = np.concatenate(fit_nobs)
     print(f"    collected {len(fit_obs)} transitions")
 
-    detector = PEDMDetector(obs_dim=obs_dim, action_dim=act_dim, n_part=args.n_part, device=device)
+    detector = PEDMDetector(
+        obs_dim=obs_dim, action_dim=act_dim, n_part=args.n_part, decays=list(args.decays), device=device,
+    )
     print(f"[2/2] fitting PEDM ({args.dyn_epochs} epochs)...")
     detector.fit(fit_obs, fit_act, fit_nobs, n_train_epochs=args.dyn_epochs, verbose=True)
 
